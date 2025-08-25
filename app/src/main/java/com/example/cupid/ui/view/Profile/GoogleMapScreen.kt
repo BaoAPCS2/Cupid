@@ -137,22 +137,29 @@ fun GoogleMapScreen(
     }
     val uiSettings by remember { mutableStateOf(MapUiSettings(zoomControlsEnabled = false)) }
 
+    // Marker states (fix lỗi "Creating state object during composition")
+    val destinationMarkerState = remember { MarkerState(destination) }
+    var myMarkerState by remember { mutableStateOf<MarkerState?>(null) }
+
     // Lấy vị trí hiện tại (last known)
     LaunchedEffect(hasLocationPerm) {
         if (!hasLocationPerm) return@LaunchedEffect
         fused.lastLocation.addOnSuccessListener { loc ->
             if (loc != null) {
                 myLatLng = LatLng(loc.latitude, loc.longitude)
+                myMarkerState = MarkerState(myLatLng!!)
 
-                // Fit 2 điểm vào khung hình
+                // Fit 2 điểm vào khung hình (fix nullable myLatLng)
                 scope.launch {
-                    val bounds = LatLngBounds.builder()
-                        .include(myLatLng)
-                        .include(destination)
-                        .build()
-                    cameraPositionState.animate(
-                        update = CameraUpdateFactory.newLatLngBounds(bounds, 120)
-                    )
+                    myLatLng?.let { current ->
+                        val bounds = LatLngBounds.builder()
+                            .include(current)
+                            .include(destination)
+                            .build()
+                        cameraPositionState.animate(
+                            update = CameraUpdateFactory.newLatLngBounds(bounds, 120)
+                        )
+                    }
                 }
 
                 // Gọi Directions API để lấy đường đi + khoảng cách
@@ -169,6 +176,7 @@ fun GoogleMapScreen(
             } else {
                 // fallback nếu null (ví dụ chưa có last location)
                 myLatLng = LatLng(10.762622, 106.660172) // HCM
+                myMarkerState = MarkerState(myLatLng!!)
             }
         }
     }
@@ -182,16 +190,16 @@ fun GoogleMapScreen(
                 uiSettings = uiSettings,
                 cameraPositionState = cameraPositionState
             ) {
-                // Marker người kia
+                // Marker người kia (fixed với remember)
                 Marker(
-                    state = MarkerState(destination),
+                    state = destinationMarkerState,
                     title = userName,
                     snippet = "Người bạn thích"
                 )
-                // Marker của bạn
-                myLatLng?.let {
+                // Marker của bạn (chỉ tạo khi có vị trí)
+                myMarkerState?.let {
                     Marker(
-                        state = MarkerState(it),
+                        state = it,
                         title = "Bạn",
                         snippet = "Vị trí hiện tại"
                     )
@@ -206,7 +214,6 @@ fun GoogleMapScreen(
             val text = when {
                 distanceText != null -> "Khoảng cách theo đường đi: ${distanceText}"
                 myLatLng != null -> {
-                    // nếu chưa có Directions, tạm tính đường chim bay
                     val res = android.location.Location("").apply {
                         latitude = myLatLng!!.latitude
                         longitude = myLatLng!!.longitude
